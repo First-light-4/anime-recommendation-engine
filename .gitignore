@@ -1,0 +1,57 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python environments and generated files
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Datasets: retain only the directory marker
+/data/**
+!/data/.gitkeep
+*.parquet
+*.csv
+*.jsonl
+*.h5
+*.hdf5
+*.npz
+*.npy
+
+# Local models and experiment artifacts
+models/
+artifacts/
+mlruns/
+mlartifacts/
+mlflow.db
+*.pkl
+*.pickle
+*.joblib
+*.onnx
+*.cbm
+
+# Notebook checkpoints, editor files, and temporary files
+.ipynb_checkpoints/
+.idea/
+.vscode/
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+tmp/
+temp/
+.DS_Store
+Thumbs.db
