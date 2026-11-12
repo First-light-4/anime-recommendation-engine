@@ -54,6 +54,8 @@ Runtime-зависимостей нет. Для разработки испол�
 ## Исследование YummyAnime API
 
 Notebook: `notebooks/01_yummyanime_api_exploration.ipynb`.
+ARE-004.1: HTTP-клиент, нормализация и проверки вынесены в `src/anime_recommender/`.
+Модули и примеры: [docs/ARE-004.1-modular-exploration.md](docs/ARE-004.1-modular-exploration.md).
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -e ".[dev,research]"
@@ -100,3 +102,30 @@ Notebook выполняет до четырёх GET-запросов для од
 1000 пользователей по seed. Полный CSV не сохраняется. Parquet, кэш и quality report
 хранятся в игнорируемом `data/`. Без кэша обычный запуск отказывается скачивать источник.
 Рейтинги сохраняются без implicit-преобразования; конфликтующие пары исключаются.
+
+Исследование готовых таблиц: `notebooks/02_training_data_exploration.ipynb`.
+Для обоих notebook установите `.[dev,data,research]` и выберите kernel `.venv`.
+Второй notebook читает только локальные Parquet, проверяет hashes отчёта ARE-004,
+показывает статистику и покрытие MAL ID. `check_profile=False` отключает его два
+API-запроса и оставляет полностью локальное исследование. Датасет повторно не скачивается.
+
+## Подготовка ML-датасета (ARE-005 / ARE-005.1)
+
+```powershell
+.venv\Scripts\python.exe -m pip install -e ".[dev,data,ml]"
+.venv\Scripts\python.exe -m anime_recommender.training.dataset
+```
+
+Конфигурация: `configs/ml_dataset.json`. Основной порог — `rating >= 5`, доступны
+5/6/7/8. Сначала делятся пользователи, затем исходные очищенные взаимодействия
+validation/test разделяются на context/target, и только после этого выделяются
+positives. Все evaluation-пользователи сохраняются, включая пользователей без
+positive targets или warm context. Минимумы активности 5/5 применяются только к train.
+Item vocabulary строится исключительно по train. Cold items сохраняются в таблицах
+и статистике, но исключаются из отдельных CSR для fold-in context.
+Parquet, CSR NPZ, mappings и отчёт находятся в игнорируемом `data/processed/ml/`.
+ALS не обучается; API и исходный датасет не запрашиваются.
+
+Исследование: `notebooks/03_ml_dataset_preparation.ipynb`, для него нужен также extra
+`research`. Текущий протокол и статистика: [docs/ARE-005.1-evaluation-protocol.md](docs/ARE-005.1-evaluation-protocol.md).
+Требования будущего online inference: [ADR-001](docs/ADR-001-yummyanime-positive-feedback.md).

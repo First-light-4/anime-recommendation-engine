@@ -49,20 +49,20 @@ def test_null_status_preserved_and_favorites_cross_checked(monkeypatch):
         {"id": 1, "nickname": "synthetic-profile"}, [row], [row], [],
     ])
     assert get.call_count == 4
-    assert ns["rows"][0]["user"]["list"]["list"] is None
+    assert ns["snapshot"].rows[0]["user"]["list"]["list"] is None
     assert ns["df"]["list_id"].isna().all()
-    assert ns["counts"]["No status"] == 1
-    assert ns["favorite_check"] is True
+    assert ns["statuses"].loc["No status", "API"] == 1
+    assert ns["snapshot"].favorites["favorite_membership_matches"] is True
     assert ns["comparison"].loc["Favorites", "API"] == 1
     assert ns["comparison"]["Website"].isna().all()
     assert ns["comparison"]["Match"].isna().all()
-    assert ns["quality"]["duplicate_anime_ids"] == 0
-    assert ns["rating_summary"]["zero_ratings"] == 1
+    assert ns["quality"]["summary"]["duplicate_anime_ids"] == 0
+    assert ns["ratings"]["zero_ratings"] == 1
 
 
 def test_network_failure_stops_requests_and_keeps_comparison_unknown(monkeypatch):
     ns, get = execute_notebook(monkeypatch)
     assert get.call_count == 1
     assert ns["df"].empty
-    assert ns["api_ready"] is False
+    assert ns["snapshot"].complete is False
     assert ns["comparison"]["Match"].isna().all()

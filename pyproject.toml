@@ -13,6 +13,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8,<9"]
 data = ["pandas>=2.2,<3", "requests>=2.32,<3", "pyarrow>=18,<24"]
+ml = ["scipy>=1.13,<2"]
 research = [
     "requests>=2.32,<3",
     "pandas>=2.2,<3",
