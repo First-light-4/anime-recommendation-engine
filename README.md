@@ -9,7 +9,8 @@ ARE-001: создана базовая структура Python-проекта,
 Для ARE-002.1 добавлен исследовательский notebook интеграции с YummyAnime API.
 ARE-003 содержит исследование обучающих данных; ARE-004 добавляет локальный pipeline
 отбора полных историй, проверки схемы, очистки и сохранения Parquet.
-Обучение моделей, REST API, интерфейс и инфраструктурные сервисы пока не реализованы.
+ARE-006: реализованы Popularity, CPU ALS, fold-in новых пользователей, сохранение моделей
+и диагностика на validation. REST API, интерфейс и инфраструктурные сервисы пока не реализованы.
 
 ## Планируемая архитектура
 
@@ -19,8 +20,8 @@ Model Registry → Inference → REST API → Frontend.
 Планируется начать с popularity baseline и implicit ALS с fold-in для новых
 пользователей, затем добавить ранжирование CatBoost. Предполагаемый стек включает
 PostgreSQL, Parquet, Polars/Pandas, SciPy, MLflow, FastAPI, Streamlit и Docker
-Compose. На текущем этапе подключены только библиотеки для исследования и обработки
-данных; инфраструктурные сервисы не запускаются. Исследование источников и MAL mapping
+Compose. На текущем этапе подключены библиотеки для исследования, обработки данных
+и локального обучения моделей; инфраструктурные сервисы не запускаются. Источники и MAL mapping
 описано в отчёте ARE-003.
 
 ## Структура
@@ -129,3 +130,39 @@ ALS не обучается; API и исходный датасет не зап�
 Исследование: `notebooks/03_ml_dataset_preparation.ipynb`, для него нужен также extra
 `research`. Текущий протокол и статистика: [docs/ARE-005.1-evaluation-protocol.md](docs/ARE-005.1-evaluation-protocol.md).
 Требования будущего online inference: [ADR-001](docs/ADR-001-yummyanime-positive-feedback.md).
+
+## Обучение рекомендательных моделей (ARE-006)
+
+```powershell
+.venv\Scripts\python.exe -m pip install -e ".[dev,data,ml,models,research]"
+.venv\Scripts\python.exe -m anime_recommender.training.pipeline
+# Загрузка без повторного обучения:
+.venv\Scripts\python.exe -m anime_recommender.training.pipeline --load-only
+```
+
+Конфигурация: `configs/recommendation_models.json`. Используются локальные артефакты
+ARE-005.1; test не читается. ALS: 64 фактора, regularization=0.1, 20 итераций, seed=42,
+CPU/BLAS по одному потоку. Обе модели исключают весь известный context, включая низкие
+и нулевые оценки. Fold-in использует warm positives и не изменяет item factors.
+Без warm positives ALS явно недоступен; автоматический fallback в диагностику не включён.
+ALS scores не являются вероятностями.
+
+Модели и mappings: `artifacts/models/are006/`; диагностика: `artifacts/validation/are006/`.
+Оба каталога игнорируются Git. Native NPZ/Parquet/JSON проверяются по SHA-256 и fingerprint
+mapping. Notebook `04_recommendation_models.ipynb` по умолчанию загружает готовые модели;
+для первого обучения установите `retrain=True`, затем верните `False`. Outputs перед сохранением очистить.
+Отчёт и описание модулей: [ARE-006](docs/ARE-006-recommendation-models.md).
+
+В начале Notebook 04 задаются параметры ALS, `top_k`, validation user_id и необязательный
+nickname. При смене пользователя или `top_k` достаточно повторить разделы рекомендаций;
+переобучение не требуется. Context содержит исходные оценки и warm/cold-признаки;
+скрытые targets используются только для последующей диагностики и колонки `is_hit`.
+Добавлены графики метрик, scores, популярности выдачи и попаданий.
+
+Эксперимент YummyAnime выключен при `nickname=None`. После включения выполняются до трёх
+запросов существующим клиентом (профиль, списки, избранное). Бинарные positives: оценка
+от 5, просмотренное без оценки или избранное; planned/dropped исключаются из positives.
+Сопоставление выполняется через MAL ID, fold-in — по warm positives; все сопоставленные
+известные аниме исключаются из выдачи. При пустом warm context используется Popularity.
+Подготовка сигналов находится в `preprocessing/profile_signals.py`, исследовательские
+вызовы — в `recommendation_exploration.py`. История API хранится только в памяти.

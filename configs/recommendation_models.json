@@ -1,0 +1,19 @@
+{
+  "dataset_dir": "data/processed/ml",
+  "catalog_path": "data/processed/anime_catalog.parquet",
+  "model_dir": "artifacts/models/are006",
+  "diagnostic_dir": "artifacts/validation/are006",
+  "top_k": 10,
+  "als": {
+    "factors": 64,
+    "regularization": 0.1,
+    "iterations": 20,
+    "random_state": 42,
+    "num_threads": 1,
+    "alpha": 1.0,
+    "dtype": "float32",
+    "use_cg": true,
+    "cg_steps": 3
+  },
+  "blas_threads": 1
+}
