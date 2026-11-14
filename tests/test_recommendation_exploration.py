@@ -18,7 +18,8 @@ from anime_recommender.preprocessing.profile_signals import normalize_profile_hi
 from anime_recommender.preprocessing.sparse_matrix import build_train_matrix
 from anime_recommender.preprocessing.training_data import DataValidationError
 from anime_recommender.recommendation_exploration import (
-    ModelWorkspace, load_workspace, optional_profile_view, profile_view, validation_view,
+    ModelWorkspace, load_workspace, load_profile_workspace, optional_profile_view,
+    profile_display, profile_view, refresh_profile_recommendations, validation_view,
 )
 from anime_recommender.training.pipeline import fit_models
 
@@ -172,3 +173,84 @@ def test_model_parameter_change_requires_explicit_retrain(workspace, monkeypatch
     assert passed["als"]["factors"] == 4
     assert passed["model_dir"].endswith("-notebook")
     assert run.call_args.kwargs == {"train": True}
+
+
+@pytest.mark.parametrize("environment,entered,expected,prompted", [
+    (" EnvUser ", "unused", "EnvUser", False),
+    ("", " TypedUser ", "TypedUser", True),
+    ("  ", "", "First_Light", True),
+])
+def test_notebook05_nickname_precedence(environment, entered, expected, prompted, monkeypatch):
+    import os
+    monkeypatch.setenv("YUMMYANIME_TEST_NICKNAME", environment)
+    notebook = json.loads((ROOT / "notebooks/05_yummyanime_recommendations.ipynb").read_text())
+    cell = next(c for c in notebook["cells"] if c["cell_type"] == "code" and "nickname = (" in "".join(c["source"]))
+    prompt = Mock(return_value=entered)
+    namespace = {"os": os, "input": prompt}
+    exec("".join(cell["source"]), namespace)
+    assert namespace["nickname"] == expected
+    assert prompt.called == prompted
+
+
+def test_profile_switch_and_k_refresh_display_without_training(workspace):
+    client = Mock()
+    client.get_user.side_effect = [{"id": 123}, {"id": 456}]
+    client.get_lists.side_effect = [[row(901, 101)], [row(902, 102)]]
+    client.get_favorites.return_value = []
+    client.request_log = []
+    first = profile_view(workspace, client, "SyntheticA", top_k=2)
+    second = profile_view(workspace, client, "SyntheticB", top_k=3)
+    assert first["history"].anime_id.tolist() == [901]
+    assert second["history"].anime_id.tolist() == [902]
+    assert len(first["recommendations"]) == 2 and len(second["recommendations"]) == 3
+    assert client.get_lists.call_args_list[0].args == (123,)
+    assert client.get_lists.call_args_list[1].args == (456,)
+    display = profile_display(first, "SyntheticA")
+    assert display["history"].empty
+    assert display["summary"]["Completed"] == 1
+    assert display["summary"]["Rated"] == 0
+    assert display["summary"]["Excluded candidate items"] == 1
+    assert list(display["recommendations"].columns) == ["Rank", "English Title", "Russian Title", "ALS Score", "MAL ID"]
+    assert len(profile_display(first, "SyntheticA", show_history=True)["history"]) == 1
+    calls = client.mock_calls.copy()
+    refreshed = refresh_profile_recommendations(workspace, first, top_k=4)
+    assert len(refreshed["recommendations"]) == 4
+    assert client.mock_calls == calls  # Changing K reuses fetched history.
+
+
+def test_invalid_nickname_is_reported_without_partial_inference(workspace, monkeypatch):
+    from anime_recommender.ingestion.yummyanime import YummyAnimeError
+    monkeypatch.setenv("YUMMYANIME_APPLICATION_TOKEN", "synthetic-public-token")
+    client = Mock()
+    client.request_log = []
+    client.get_user.side_effect = YummyAnimeError("API request failed: HTTP 404", 404)
+    monkeypatch.setattr("anime_recommender.recommendation_exploration.YummyAnimeClient", lambda _: client)
+    result = optional_profile_view(workspace, "NotFound")
+    assert "check the nickname" in result["error"]
+    assert profile_display(result, "NotFound")["recommendations"].empty
+    client.get_lists.assert_not_called()
+
+
+def test_inference_loader_missing_models_has_pipeline_instruction(monkeypatch, tmp_path):
+    directory = tmp_path / "configs"; directory.mkdir()
+    config = json.loads((ROOT / "configs/recommendation_models.json").read_text())
+    (directory / "recommendation_models.json").write_text(json.dumps(config))
+    monkeypatch.setattr("anime_recommender.recommendation_exploration.load_training_inputs",
+                        Mock(side_effect=AssertionError("Must not load interaction splits")))
+    monkeypatch.setattr("anime_recommender.recommendation_exploration.run_experiment",
+                        Mock(side_effect=AssertionError("Must not train")))
+    with pytest.raises(DataValidationError, match="python -m anime_recommender.training.pipeline"):
+        load_profile_workspace(tmp_path)
+
+
+def test_notebook04_has_no_profile_inference_and_both_are_output_free():
+    for name in ["04_recommendation_models.ipynb", "05_yummyanime_recommendations.ipynb"]:
+        notebook = json.loads((ROOT / "notebooks" / name).read_text())
+        code = "\n".join("".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code")
+        for cell in notebook["cells"]:
+            if cell["cell_type"] == "code":
+                assert cell["outputs"] == [] and cell["execution_count"] is None
+        if name.startswith("04"):
+            assert "optional_profile_view" not in code and "yummyanime_nickname" not in code
+        else:
+            assert "load_workspace" not in code and "retrain" not in code and ".fit(" not in code

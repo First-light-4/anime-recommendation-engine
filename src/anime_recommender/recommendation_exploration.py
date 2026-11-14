@@ -10,6 +10,9 @@ from anime_recommender.evaluation.recommendation_checks import (
     diagnostic_metrics, evaluate_validation, generate_validation_recommendations,
 )
 from anime_recommender.inference.fold_in import fold_in
+from anime_recommender.inference.recommendation_table import (
+    ENGLISH_FIELDS, RUSSIAN_FIELDS, recommendation_table, russian_titles_by_mal,
+)
 from anime_recommender.ingestion.training_data import file_sha256
 from anime_recommender.ingestion.yummyanime import YummyAnimeClient, YummyAnimeError
 from anime_recommender.preprocessing.profile_signals import normalize_profile_history, prepare_profile_signals
@@ -56,9 +59,39 @@ def load_workspace(root, factors=64, regularization=0.1, iterations=20, seed=42,
     return ModelWorkspace(bundle, inputs, pd.read_parquet(path))
 
 
+def load_profile_workspace(root):
+    """Load only saved models and the certified catalog, with no training/splits.
+
+    A missing bundle never invokes fit or downloads anything. The preparation
+    instruction deliberately points to the separate existing training pipeline.
+    """
+    root = Path(root)
+    config = json.loads((root / "configs/recommendation_models.json").read_text(encoding="utf-8"))
+    try:
+        bundle = load_models(root / config["model_dir"])
+        path = root / config["catalog_path"]
+        report = json.loads((path.parent / "data_quality_report.json").read_text(encoding="utf-8"))
+        if report.get("status") != "success" or file_sha256(path) != report.get("output_sha256", {}).get(path.name):
+            raise DataValidationError("Display catalog is not certified by ARE-004")
+        catalog = pd.read_parquet(path)
+        aligned = bundle.items[["dataset_anime_id", "myanimelist_id"]].merge(
+            catalog[["dataset_anime_id", "myanimelist_id"]], on="dataset_anime_id",
+            how="left", validate="one_to_one", suffixes=("_model", "_catalog"))
+        if not aligned.myanimelist_id_model.eq(aligned.myanimelist_id_catalog).all():
+            raise DataValidationError("Catalog MAL mapping differs from saved model")
+    except FileNotFoundError:
+        raise DataValidationError(
+            "Saved models/catalog are missing. Prepare local ARE-005.1 data, then run "
+            "python -m anime_recommender.training.pipeline from the project root. "
+            "Notebook 05 only loads models and never trains them.") from None
+    return ModelWorkspace(bundle, None, catalog)
+
+
 def annotate_items(frame, workspace):
     """Keep original fields; attach certified titles and train-only popularity."""
-    return frame.merge(workspace.catalog[["dataset_anime_id", "title"]], on="dataset_anime_id",
+    titles = list(dict.fromkeys(["title", *ENGLISH_FIELDS, *RUSSIAN_FIELDS]))
+    columns = ["dataset_anime_id", *[name for name in titles if name in workspace.catalog]]
+    return frame.merge(workspace.catalog[columns], on="dataset_anime_id",
                        how="left", validate="many_to_one").merge(
         workspace.bundle.popularity[["dataset_anime_id", "unique_users"]], on="dataset_anime_id",
         how="left", validate="many_to_one")
@@ -116,15 +149,23 @@ def profile_view(workspace, client, nickname, top_k=10):
     favorites = client.get_favorites(profile["id"])
     history = normalize_profile_history(rows, favorites)
     signals = prepare_profile_signals(history, workspace.catalog, workspace.bundle.items)
+    signals.frame["status"] = signals.frame.list_id.map(STATUS_NAMES).fillna("No/other status")
+    fetched = {"state": "ok", "error": None, "coverage": signals.coverage,
+        "history": signals.frame, "signals": signals, "requests": pd.DataFrame(client.request_log)}
+    return refresh_profile_recommendations(workspace, fetched, top_k)
+
+
+def refresh_profile_recommendations(workspace, profile, top_k=10):
+    """Rerank an already fetched profile, with zero API calls and no training."""
+    if profile["state"] != "ok":
+        return profile
+    signals = profile["signals"]
     recommenders = workspace.bundle.recommenders()
     als = recommenders["als"].recommend(signals.positive_ids, top_k, seen_items=signals.seen_ids)
     result = als if als.available else recommenders["popularity"].recommend(
         signals.positive_ids, top_k, seen_items=signals.seen_ids)
-    signals.frame["status"] = signals.frame.list_id.map(STATUS_NAMES).fillna("No/other status")
-    return {"state": "ok", "error": None, "coverage": signals.coverage,
-        "history": signals.frame, "recommendations": annotate_items(result.recommendations, workspace),
-        "fallback": not als.available, "fallback_reason": als.reason,
-        "requests": pd.DataFrame(client.request_log)}
+    return {**profile, "recommendations": annotate_items(result.recommendations, workspace),
+        "fallback": not als.available, "fallback_reason": als.reason}
 
 
 def optional_profile_view(workspace, nickname=None, top_k=10, env_path=None):
@@ -137,13 +178,83 @@ def optional_profile_view(workspace, nickname=None, top_k=10, env_path=None):
         "history": pd.DataFrame(), "recommendations": pd.DataFrame(), "requests": pd.DataFrame()}
     if not nickname or not nickname.strip():
         return empty
-    import os
-    from dotenv import dotenv_values
-    token = os.environ.get("YUMMYANIME_APPLICATION_TOKEN") or dotenv_values(env_path).get("YUMMYANIME_APPLICATION_TOKEN")
-    if not token:
+    client = _public_client(env_path)
+    if client is None:
         return {**empty, "state": "error", "error": "Public application token not configured"}
-    client = YummyAnimeClient(token)
     try:
         return profile_view(workspace, client, nickname, top_k)
     except YummyAnimeError as error:
-        return {**empty, "state": "error", "error": str(error), "requests": pd.DataFrame(client.request_log)}
+        message = "Profile not found (HTTP 404); check the nickname and profile availability." if error.status == 404 else str(error)
+        return {**empty, "state": "error", "error": message, "requests": pd.DataFrame(client.request_log)}
+
+
+def _public_client(env_path):
+    import os
+    from dotenv import dotenv_values
+    token = os.environ.get("YUMMYANIME_APPLICATION_TOKEN") or dotenv_values(env_path).get("YUMMYANIME_APPLICATION_TOKEN")
+    return YummyAnimeClient(token) if token else None
+
+
+def enrich_profile_titles(profile, env_path=None):
+    """At most one metadata call for up to 20 selected MAL IDs; memory cache only.
+
+    Metadata failure never changes recommendation IDs, scores or fallback choice.
+    Missing/ambiguous/failed titles remain unavailable, with no automatic retries.
+    """
+    if profile["state"] != "ok":
+        return profile
+    cache = dict(profile.get("title_cache", {}))
+    recs = profile["recommendations"].copy()
+    needs_title = recommendation_table(recs)["Russian Title"].eq("—").to_numpy()
+    ids = [int(value) for value in recs.loc[needs_title, "myanimelist_id"].dropna().unique()]
+    pending = [value for value in ids if value not in cache][:20]
+    error = profile.get("title_error")
+    log = profile.get("title_requests", pd.DataFrame())
+    if pending:
+        cache.update(dict.fromkeys(pending))
+        client = _public_client(env_path)
+        if client is None:
+            error = "Public application token not configured; Russian titles unavailable"
+        else:
+            try:
+                cache.update(russian_titles_by_mal(client.get_anime_by_mal_ids(pending), pending))
+                error = None
+            except YummyAnimeError as failure:
+                error = str(failure)
+            new_log = pd.DataFrame(client.request_log)
+            log = new_log if log.empty else pd.concat([log, new_log], ignore_index=True)
+    recs["yummyanime_title_ru"] = recs.myanimelist_id.map(cache)
+    return {**profile, "recommendations": recs, "title_cache": cache,
+            "title_error": error, "title_requests": log}
+
+
+def profile_display(profile, nickname, show_history=False):
+    """Presentation-only data, no HTTP, signal preparation or ranking duplication.
+
+    No public YummyAnime catalog mapping/URLs are available for recommended items;
+    never construct a YummyAnime URL from an unrelated MAL or dataset ID.
+    """
+    if profile["state"] != "ok":
+        return {"summary": pd.Series({"State": profile["state"], "Error": profile["error"]}),
+                "recommendations": pd.DataFrame(), "history": pd.DataFrame()}
+    history = profile["history"]
+    coverage = profile["coverage"]
+    recs = profile["recommendations"]
+    used = "popularity" if profile["fallback"] else "als"
+    summary = pd.Series({
+        "Nickname": nickname,
+        "Anime total": history.anime_id.nunique(),
+        "Completed": history.loc[history.list_id.eq(2), "anime_id"].nunique(),
+        "Favorites": history.loc[history.is_fav.fillna(False), "anime_id"].nunique(),
+        "Rated": history.loc[history.user_rating.between(1, 10).fillna(False), "anime_id"].nunique(),
+        "Positive interactions": history.loc[history.positive, "anime_id"].nunique(),
+        "Warm positives for fold-in": coverage["fold_in_interactions"],
+        "MAL coverage (catalog)": coverage["catalog_coverage"],
+        "MAL coverage (train vocabulary)": coverage["training_coverage"],
+        "Matched train items": coverage["training_matches"],
+        "Excluded candidate items": history.loc[history.known_in_training, "dataset_anime_id"].nunique(),
+        "Model": used, "Fallback reason": profile["fallback_reason"],
+    })
+    table = recommendation_table(recs)
+    return {"summary": summary, "recommendations": table,
+            "history": history if show_history else history.iloc[:0].copy()}

@@ -1,6 +1,6 @@
 """Read-only YummyAnime client. Public application token only; no Jupyter state."""
 
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -85,3 +85,14 @@ class YummyAnimeClient:
 
     def get_rating_statistics(self, user_id: int) -> list[dict]:
         return self._records(self._get(f"/users/{self._user_id(user_id)}/stats/ratings", "GET /users/{id}/stats/ratings"))
+
+    def get_anime_by_mal_ids(self, mal_ids: list[int]) -> list[dict]:
+        """One bounded catalog request, no pagination or automatic retries."""
+        if not mal_ids or len(mal_ids) > 20 or any(type(value) is not int or value <= 0 for value in mal_ids):
+            raise ValueError("Request between 1 and 20 positive integer MAL IDs")
+        ids = sorted(set(mal_ids))
+        query = urlencode({"mal_ids": ",".join(map(str, ids)), "limit": 20, "offset": 0})
+        rows = self._records(self._get("/anime?" + query, "GET /anime (bounded MAL filter)"))
+        if len(rows) > 20:
+            raise YummyAnimeError("Unexpected catalog result size; metadata ignored")
+        return rows
