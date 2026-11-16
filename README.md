@@ -179,3 +179,22 @@ ALS score. Выбранная модель остаётся в сводке пр
 Подготовка сигналов находится в `preprocessing/profile_signals.py`, исследовательские
 вызовы — в `recommendation_exploration.py`. История API хранится только в памяти.
 Описание разделения и проверок: [ARE-006.1](docs/ARE-006.1-separate-profile-notebook.md).
+
+## Evaluation framework (ARE-007A)
+
+```powershell
+.venv\Scripts\python.exe -m anime_recommender.evaluation.ranking_evaluator
+```
+
+Конфигурация `configs/evaluation.json`: только validation, K=5/10/15/20.
+Сохранённые модели оцениваются без обучения и обращения к API. Реализованы Precision,
+Recall, NDCG, MAP, HitRate, покрытие каталога, Full/Warm-режимы и cohort analysis.
+ALS-only и ALS с Popularity fallback публикуются отдельно. Для пустых targets метрики
+undefined; macro исключает их и показывает eligible counts. MAP нормируется через
+`min(K, число targets)`, Precision — через K даже при короткой выдаче.
+
+Отчёты JSON/Parquet сохраняются в игнорируемом `artifacts/evaluation/are007a/`
+с fingerprints, версиями, конфигурациями, UTC timestamp и проверкой целостности.
+Notebook `06_model_evaluation.ipynb` показывает готовые таблицы и графики из `src/`.
+Test не читается; threshold и splits не меняются. Определения, реальные результаты
+и ограничения: [ARE-007A](docs/ARE-007A-evaluation-framework.md).

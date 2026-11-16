@@ -1,12 +1,11 @@
 """ARE-006 validation diagnostics only. No test evaluation or tuning framework."""
 
-import math
-
 import numpy as np
 import pandas as pd
 
 from anime_recommender.inference.recommendations import context_ids, OUTPUT_COLUMNS
 from anime_recommender.preprocessing.training_data import DataValidationError
+from anime_recommender.evaluation.ranking_metrics import ranking_metrics
 
 
 def check_recommendations(result, item_mapping, seen, top_k):
@@ -59,14 +58,11 @@ def diagnostic_metrics(recommendations, statuses, target, user_mapping, item_map
         warm = wanted & vocabulary
         selected = recommendations.loc[recommendations.dataset_user_id.eq(uid) & recommendations.model_name.eq(name)].sort_values("rank")
         ids = selected.dataset_anime_id.tolist()
-        hits = len(set(ids) & wanted)
-        recall = hits / len(wanted) if wanted else None
-        dcg = sum(1 / math.log2(rank + 1) for rank, item in enumerate(ids, 1) if item in wanted)
-        idcg = sum(1 / math.log2(rank + 1) for rank in range(1, min(top_k, len(wanted)) + 1))
+        full = ranking_metrics(ids, wanted, top_k)
         warm_eligible = bool(warm) and status["warm_context"] > 0
-        rows.append({"dataset_user_id": uid, "model_name": name, "full_recall": recall,
-            "full_ndcg": dcg / idcg if wanted else None,
-            "warm_recall": len(set(ids) & warm) / len(warm) if warm_eligible else None,
+        rows.append({"dataset_user_id": uid, "model_name": name, "full_recall": full["recall"],
+            "full_ndcg": full["ndcg"],
+            "warm_recall": ranking_metrics(ids, warm, top_k)["recall"] if warm_eligible else None,
             "positive_targets": len(wanted), "cold_targets": len(wanted - vocabulary),
             "warm_context": status["warm_context"], "als_available": status["als_available"]})
     per_user = pd.DataFrame(rows)

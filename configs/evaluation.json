@@ -1,0 +1,9 @@
+{
+  "dataset_dir": "data/processed/ml",
+  "model_dir": "artifacts/models/are006",
+  "catalog_path": "data/processed/anime_catalog.parquet",
+  "output_dir": "artifacts/evaluation/are007a",
+  "split": "validation",
+  "ks": [5, 10, 15, 20],
+  "include_als_fallback": true
+}
