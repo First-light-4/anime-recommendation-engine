@@ -1,0 +1,14 @@
+{
+  "vocabulary_path": "data/processed/ml/item_mapping.parquet",
+  "output_dir": "data/processed/franchises",
+  "bootstrap_path": "configs/yummyanime_franchise_relations.json",
+  "supplement_path": "configs/franchise_relations.json",
+  "batch_size": 10,
+  "max_requests": 5,
+  "requests_per_second": 0.5,
+  "max_retries": 2,
+  "backoff_seconds": 2,
+  "max_sleep_seconds": 30,
+  "refresh_days": 30,
+  "negative_refresh_days": 1
+}

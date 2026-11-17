@@ -10,6 +10,7 @@ from anime_recommender.evaluation.recommendation_checks import (
     diagnostic_metrics, evaluate_validation, generate_validation_recommendations,
 )
 from anime_recommender.inference.fold_in import fold_in
+from anime_recommender.inference.franchise_filter import recommend_with_franchise
 from anime_recommender.inference.recommendation_table import (
     ENGLISH_FIELDS, RUSSIAN_FIELDS, recommendation_table, russian_titles_by_mal,
 )
@@ -18,6 +19,7 @@ from anime_recommender.ingestion.yummyanime import YummyAnimeClient, YummyAnimeE
 from anime_recommender.preprocessing.profile_signals import normalize_profile_history, prepare_profile_signals
 from anime_recommender.preprocessing.training_data import DataValidationError
 from anime_recommender.preprocessing.user_data import STATUS_NAMES
+from anime_recommender.preprocessing.franchise_mapping import load_franchise_resources
 from anime_recommender.training.artifacts import load_models
 from anime_recommender.training.inputs import load_training_inputs
 from anime_recommender.training.pipeline import run_experiment
@@ -28,6 +30,8 @@ class ModelWorkspace:
     bundle: object
     inputs: object
     catalog: pd.DataFrame
+    franchise_config: dict | None = None
+    franchise_mapping: object | None = None
 
 
 def load_workspace(root, factors=64, regularization=0.1, iterations=20, seed=42, retrain=False):
@@ -84,7 +88,8 @@ def load_profile_workspace(root):
             "Saved models/catalog are missing. Prepare local ARE-005.1 data, then run "
             "python -m anime_recommender.training.pipeline from the project root. "
             "Notebook 05 only loads models and never trains them.") from None
-    return ModelWorkspace(bundle, None, catalog)
+    franchise_config, franchise_mapping = load_franchise_resources(root)
+    return ModelWorkspace(bundle, None, catalog, franchise_config, franchise_mapping)
 
 
 def annotate_items(frame, workspace):
@@ -161,11 +166,32 @@ def refresh_profile_recommendations(workspace, profile, top_k=10):
         return profile
     signals = profile["signals"]
     recommenders = workspace.bundle.recommenders()
+    config = workspace.franchise_config
+    if config is not None and config["enabled"]:
+        history = profile["history"]
+        observed = history.myanimelist_id.dropna().astype(int).tolist()
+        completed = history.loc[history.list_id.eq(2).fillna(False), "myanimelist_id"].dropna().astype(int).tolist()
+        kwargs = {"train_items": workspace.bundle.items, "positive_context": signals.positive_ids,
+            "mapping": workspace.franchise_mapping, "observed_dataset_ids": signals.seen_ids,
+            "observed_mal_ids": observed, "completed_mal_ids": completed, "top_k": top_k,
+            "max_per_franchise": config["max_recommendations_per_franchise"],
+            "candidate_multiplier": config["candidate_multiplier"]}
+        filtered = recommend_with_franchise(recommenders["als"], **kwargs)
+        fallback = not filtered.diagnostics["model_available"]
+        unavailable_reason = filtered.diagnostics["model_unavailable_reason"]
+        if fallback:
+            filtered = recommend_with_franchise(recommenders["popularity"], **kwargs)
+        filtered.diagnostics.update({"metadata_warning": config.get("metadata_warning"),
+            "metadata_source": config.get("metadata_source", "configured mapping")})
+        return {**profile, "recommendations": annotate_items(filtered.recommendations, workspace),
+            "fallback": fallback, "fallback_reason": unavailable_reason,
+            "franchise_diagnostics": filtered.diagnostics, "franchise_audit": filtered.audit}
     als = recommenders["als"].recommend(signals.positive_ids, top_k, seen_items=signals.seen_ids)
     result = als if als.available else recommenders["popularity"].recommend(
         signals.positive_ids, top_k, seen_items=signals.seen_ids)
     return {**profile, "recommendations": annotate_items(result.recommendations, workspace),
-        "fallback": not als.available, "fallback_reason": als.reason}
+        "fallback": not als.available, "fallback_reason": als.reason,
+        "franchise_diagnostics": {"enabled": False}, "franchise_audit": pd.DataFrame()}
 
 
 def optional_profile_view(workspace, nickname=None, top_k=10, env_path=None):

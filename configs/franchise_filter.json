@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "relations_path": "configs/yummyanime_franchise_relations.json",
+  "max_recommendations_per_franchise": 1,
+  "candidate_multiplier": 3,
+  "prepared_dir": "data/processed/franchises"
+}

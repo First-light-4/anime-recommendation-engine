@@ -281,7 +281,40 @@ def test_runner_does_not_use_test_files_or_refit(tmp_path, monkeypatch):
     assert set(report.metadata["validation_files_sha256"]) == {
         "validation_context.parquet", "validation_target.parquet", "validation_observed_context.parquet", "validation_user_mapping.parquet"}
     assert (tmp_path / report.metadata["report_dir"] / "report.json").exists()
+    from anime_recommender.evaluation.franchise_evaluation import run_franchise_evaluation
+    baseline_manifest = tmp_path / report.metadata["report_dir"] / "report.json"
+    original_hash = file_sha256(baseline_manifest)
+    for name in ("franchise_evaluation.json", "franchise_filter.json", "franchise_relations.json", "yummyanime_franchise_relations.json"):
+        if (ROOT / "configs" / name).exists():
+            atomic_json(config_dir / name, json.loads((ROOT / "configs" / name).read_text()))
+    monkeypatch.setattr("requests.post", Mock(side_effect=AssertionError("No network in post-processing")))
+    result = run_franchise_evaluation(tmp_path)
+    assert result["metadata"]["test_evaluated"] is False
+    assert result["metadata"]["covered_train_items"] == 0
+    assert result["metadata"]["removed_original_top_k"] == 0
+    assert file_sha256(baseline_manifest) == original_hash
     config["split"] = "test"
     atomic_json(config_dir / "evaluation.json", config)
     with pytest.raises(ValueError, match="validation"):
         run_evaluation(tmp_path)
+
+
+def test_franchise_diagnostic_preserves_predictions_when_targets_change(tiny):
+    from anime_recommender.evaluation.franchise_evaluation import compare_franchise_filter
+    from anime_recommender.preprocessing.franchise_mapping import build_franchise_mapping
+    bundle, inputs = tiny
+    snapshot = {"schema_version": 1, "nodes": [{"mal_id": i} for i in range(101, 107)],
+        "relations": [{"source_mal_id": 101, "target_mal_id": 102, "relation": "SEQUEL"},
+                      {"source_mal_id": 102, "target_mal_id": 103, "relation": "SEQUEL"}],
+        "reviewed_policy": {"mainline_mal_ids": [101, 102, 103], "entry_mal_ids": [101]}}
+    mapping = build_franchise_mapping(snapshot)
+    catalog = bundle.items[["dataset_anime_id", "myanimelist_id"]]
+    config = {"enabled": True, "max_recommendations_per_franchise": 1, "candidate_multiplier": 1}
+    first = compare_franchise_filter(bundle, inputs, catalog, mapping, config, top_k=2)
+    inputs.validation_target.loc[inputs.validation_target.dataset_user_id.eq(10), "dataset_anime_id"] = [5, 996]
+    changed = compare_franchise_filter(bundle, inputs, catalog, mapping, config, top_k=2)
+    pd.testing.assert_frame_equal(first["filtered_recommendations"], changed["filtered_recommendations"])
+    pd.testing.assert_frame_equal(first["original_recommendations"], changed["original_recommendations"])
+    assert first["metadata"]["model_fingerprint"] == changed["metadata"]["model_fingerprint"]
+    assert first["metadata"]["dataset_fingerprint"] != changed["metadata"]["dataset_fingerprint"]
+    assert "No completed proof" in first["metadata"]["completion_policy"]

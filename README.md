@@ -198,3 +198,62 @@ undefined; macro исключает их и показывает eligible counts
 Notebook `06_model_evaluation.ipynb` показывает готовые таблицы и графики из `src/`.
 Test не читается; threshold и splits не меняются. Определения, реальные результаты
 и ограничения: [ARE-007A](docs/ARE-007A-evaluation-framework.md).
+
+## Franchise-aware post-processing (ARE-007C)
+
+Notebook 05 использует локальный структурированный `viewing_order` YummyAnime для
+Attack on Titan, Demon Slayer и Cyberpunk: Edgerunners. Настройки:
+`configs/franchise_filter.json`, по умолчанию max=1 на известную
+франшизу. Точные известные MAL ID исключаются при любом статусе; только completed
+подтверждает просмотр для правил порядка. Спин-оффы, фильмы и альтернативные ветки
+не превращаются автоматически в линейную обязательную последовательность.
+
+Кандидаты запрашиваются с запасом и при необходимости расширяются до train vocabulary.
+Scores и порядок допустимых рекомендаций сохраняются; запрещённые части не возвращаются
+ради заполнения Top-N. ALS не переобучается, Popularity fallback сохраняется. Никаких
+сетевых запросов связей в post-processing нет. Неизвестные связи не определяются по
+названиям и не приводят к необоснованным исключениям.
+
+Порядок основной линии строится по `data.index`, роли — по `data.text`; дополнения
+и компиляции не становятся обязательными сезонами. После самой поздней completed-части
+допускается только следующий этап. Отсутствующий в модели или несопоставленный следующий
+этап не пропускается ради более позднего сезона. Для подтверждённых альтернатив
+достаточно одной версии; рекап не считается автоматически просмотром всего сериала.
+
+Покрытие снимка — 32 MAL-сопоставленных элемента, 22 из 2091 train items; полную
+franchise-diversity не заявляем. Обновление источника выполняется отдельно и ограниченно,
+online inference читает только `configs/yummyanime_franchise_relations.json`.
+Исследование API и сценарии: [viewing_order](docs/ARE-007C-yummy-viewing-order.md).
+Отдельная validation-диагностика, не изменяющая результаты ARE-007A:
+
+```powershell
+.venv\Scripts\python.exe -m anime_recommender.evaluation.franchise_evaluation
+```
+
+Исходный отчёт: [ARE-007C](docs/ARE-007C-franchise-filtering.md). Результаты хранятся только
+локально в игнорируемом `artifacts/evaluation/are007c/`. В ratings-only validation нет
+completed-статусов: оценки не считаются доказательством просмотра. Это ограничивает
+интерпретацию сравнения с реальным online-профилем.
+
+## Automatic metadata discovery (ARE-007C.2)
+
+```powershell
+# По умолчанию: весь train vocabulary как план, без HTTP и записи файлов.
+.venv\Scripts\python.exe -m anime_recommender.ingestion.viewing_order_metadata
+# Только небольшой диагностический subset; полный запуск требует отдельного согласования.
+.venv\Scripts\python.exe -m anime_recommender.ingestion.viewing_order_metadata --execute --max-requests 5 --mal-ids 37450,38329
+```
+
+Настройки: `configs/viewing_order_metadata.json`. Реализованы budget на все попытки,
+rate limit, временные retries/backoff и Retry-After, checkpoint/resume, TTL и negative
+cache, объединение пересечений по ID с проверкой неоднозначностей. Родственные части
+вне ALS vocabulary сохраняются. Ручного списка франшиз в алгоритме discovery нет.
+
+Версии mapping/parts/source records/coverage и checksums находятся только в
+`data/processed/franchises/`, исключённом из Git. Notebook 05 предпочитает проверенный
+`latest.json`, затем статический partial fallback; при отсутствии обоих продолжает
+точное seen filtering с предупреждением. Online discovery не выполняется.
+
+Живая диагностика Rascal сейчас не завершена: оба ограниченных запуска получили
+HTTP 502 на MAL lookup. Связи не подставлены вручную. Реализация и synthetic regression
+проверены; подробности и ограничения — [ARE-007C.2](docs/ARE-007C.2-metadata-pipeline.md).

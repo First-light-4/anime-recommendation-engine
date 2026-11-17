@@ -1,0 +1,5 @@
+{
+  "base_config": "configs/evaluation.json",
+  "output_dir": "artifacts/evaluation/are007c",
+  "top_k": 10
+}

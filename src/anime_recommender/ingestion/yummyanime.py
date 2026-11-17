@@ -8,9 +8,10 @@ import requests
 class YummyAnimeError(RuntimeError):
     """Sanitized error: never includes token, nickname, URL, or response body."""
 
-    def __init__(self, message: str, status: int | None = None):
+    def __init__(self, message: str, status: int | None = None, retry_after=None):
         super().__init__(message)
         self.status = status
+        self.retry_after = retry_after
 
 
 class YummyAnimeAuthorizationError(YummyAnimeError):
@@ -47,7 +48,8 @@ class YummyAnimeClient:
         if status in (401, 403):
             raise YummyAnimeAuthorizationError(f"API authorization error: HTTP {status}", status)
         if status != 200:
-            raise YummyAnimeError(f"API request failed: HTTP {status}", status)
+            raise YummyAnimeError(f"API request failed: HTTP {status}", status,
+                                 retry_after=response.headers.get("Retry-After") if status in (429, 503) else None)
         try:
             payload = response.json()
         except ValueError:
@@ -88,11 +90,32 @@ class YummyAnimeClient:
 
     def get_anime_by_mal_ids(self, mal_ids: list[int]) -> list[dict]:
         """One bounded catalog request, no pagination or automatic retries."""
-        if not mal_ids or len(mal_ids) > 20 or any(type(value) is not int or value <= 0 for value in mal_ids):
-            raise ValueError("Request between 1 and 20 positive integer MAL IDs")
-        ids = sorted(set(mal_ids))
-        query = urlencode({"mal_ids": ",".join(map(str, ids)), "limit": 20, "offset": 0})
-        rows = self._records(self._get("/anime?" + query, "GET /anime (bounded MAL filter)"))
+        return self._catalog_by_ids("mal_ids", mal_ids)
+
+    def get_anime_by_ids(self, anime_ids: list[int]) -> list[dict]:
+        return self._catalog_by_ids("ids", anime_ids)
+
+    def _catalog_by_ids(self, field, values):
+        if not values or len(values) > 20 or any(type(value) is not int or value <= 0 for value in values):
+            raise ValueError("Request between 1 and 20 positive integer IDs")
+        ids = sorted(set(values))
+        query = urlencode({field: ",".join(map(str, ids)), "limit": 20, "offset": 0})
+        label = "GET /anime (bounded MAL filter)" if field == "mal_ids" else "GET /anime (bounded anime-ID filter)"
+        rows = self._records(self._get("/anime?" + query, label))
         if len(rows) > 20:
             raise YummyAnimeError("Unexpected catalog result size; metadata ignored")
         return rows
+
+    def get_anime(self, anime_ref):
+        if not isinstance(anime_ref, (str, int)) or isinstance(anime_ref, bool) or not str(anime_ref).strip() or (type(anime_ref) is int and anime_ref <= 0):
+            raise ValueError("Anime ID or alias required")
+        result = self._get("/anime/" + quote(str(anime_ref), safe=""), "GET /anime/{url}")
+        if not isinstance(result, dict) or type(result.get("anime_id")) is not int or result["anime_id"] <= 0:
+            raise YummyAnimeError("Unexpected anime detail schema")
+        return result
+
+    def get_anime_collections(self, anime_id, limit=1):
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("Collections research limit must be 1..20")
+        return self._records(self._get(f"/anime/{self._user_id(anime_id)}/collections?limit={limit}",
+                                       "GET /anime/{id}/collections"))

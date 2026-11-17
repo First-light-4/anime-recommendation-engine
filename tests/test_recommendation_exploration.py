@@ -254,3 +254,37 @@ def test_notebook04_has_no_profile_inference_and_both_are_output_free():
             assert "optional_profile_view" not in code and "yummyanime_nickname" not in code
         else:
             assert "load_workspace" not in code and "retrain" not in code and ".fit(" not in code
+
+
+def test_profile_franchise_pipeline_completed_vs_planned_and_fallback(workspace):
+    from anime_recommender.preprocessing.franchise_mapping import build_franchise_mapping
+    snapshot = {"schema_version": 1, "nodes": [{"mal_id": n} for n in range(101, 107)],
+        "relations": [{"source_mal_id": a, "target_mal_id": b, "relation": kind} for a, b, kind in
+            [(101, 102, "SEQUEL"), (102, 103, "SEQUEL"), (101, 104, "SIDE_STORY")]],
+        "reviewed_policy": {"mainline_mal_ids": [101, 102, 103], "entry_mal_ids": [101]}}
+    workspace.franchise_mapping = build_franchise_mapping(snapshot)
+    workspace.franchise_config = {"enabled": True, "max_recommendations_per_franchise": 1, "candidate_multiplier": 1}
+    client = Mock(); client.get_user.return_value = {"id": 123}; client.request_log = []
+    client.get_lists.return_value = [row(903, 103, status=2, rating=0)]
+    client.get_favorites.return_value = []
+    before = workspace.bundle.als.item_factors.copy()
+    completed = profile_view(workspace, client, "Synthetic", top_k=3)
+    assert not completed["fallback"]
+    assert not set(completed["recommendations"].myanimelist_id) & {101, 102, 103}
+    assert 104 in set(completed["recommendations"].myanimelist_id)  # Optional part survives.
+    assert completed["franchise_diagnostics"]["excluded_earlier_seasons"] == 2
+    calls = client.mock_calls.copy()
+    refresh_profile_recommendations(workspace, completed, top_k=2)
+    assert calls == client.mock_calls  # No HTTP when changing K.
+    client.get_lists.return_value = [row(903, 103, status=1, rating=9)]
+    planned = profile_view(workspace, client, "Synthetic", top_k=3)
+    assert planned["fallback"]  # Planned is not positive or completed.
+    assert 101 in set(planned["recommendations"].myanimelist_id)
+    assert 103 not in set(planned["recommendations"].myanimelist_id)
+    assert planned["franchise_diagnostics"]["excluded_earlier_seasons"] == 0
+    np.testing.assert_array_equal(before, workspace.bundle.als.item_factors)
+    workspace.franchise_config["enabled"] = False
+    disabled = refresh_profile_recommendations(workspace, completed, top_k=3)
+    assert disabled["franchise_diagnostics"] == {"enabled": False}
+    assert disabled["franchise_audit"].empty
+    assert set(disabled["recommendations"].myanimelist_id) & {101, 102}

@@ -22,6 +22,9 @@ htmlcov/
 # Datasets: retain only the directory marker
 /data/**
 !/data/.gitkeep
+# Local legacy metadata snapshots (configuration files themselves remain tracked)
+/configs/franchise_relations.json
+/configs/yummyanime_franchise_relations.json
 *.parquet
 *.csv
 *.jsonl
