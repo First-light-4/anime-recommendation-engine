@@ -63,7 +63,7 @@ def load_workspace(root, factors=64, regularization=0.1, iterations=20, seed=42,
     return ModelWorkspace(bundle, inputs, pd.read_parquet(path))
 
 
-def load_profile_workspace(root):
+def load_profile_workspace(root, model_dir=None):
     """Load only saved models and the certified catalog, with no training/splits.
 
     A missing bundle never invokes fit or downloads anything. The preparation
@@ -71,6 +71,8 @@ def load_profile_workspace(root):
     """
     root = Path(root)
     config = json.loads((root / "configs/recommendation_models.json").read_text(encoding="utf-8"))
+    if model_dir is not None:
+        config["model_dir"] = str(model_dir)
     try:
         bundle = load_models(root / config["model_dir"])
         path = root / config["catalog_path"]
@@ -149,14 +151,26 @@ def profile_view(workspace, client, nickname, top_k=10):
     API failure propagates to caller without retry, fallback or partial inference.
     Popularity fallback is used only for a successfully fetched empty warm context.
     """
+    fetched = fetch_profile_history(client, nickname)
+    return profile_from_history(workspace, fetched, top_k)
+
+
+def fetch_profile_history(client, nickname):
+    """Fetch three bounded endpoints, retaining only normalized source data in memory."""
     profile = client.get_user(nickname)
     rows = client.get_lists(profile["id"])
     favorites = client.get_favorites(profile["id"])
     history = normalize_profile_history(rows, favorites)
+    return {"history": history, "requests": pd.DataFrame(client.request_log)}
+
+
+def profile_from_history(workspace, fetched_history, top_k=10):
+    """Recompute mapping against the selected vocabulary, without changing source history."""
+    history = fetched_history["history"].copy(deep=True)
     signals = prepare_profile_signals(history, workspace.catalog, workspace.bundle.items)
     signals.frame["status"] = signals.frame.list_id.map(STATUS_NAMES).fillna("No/other status")
     fetched = {"state": "ok", "error": None, "coverage": signals.coverage,
-        "history": signals.frame, "signals": signals, "requests": pd.DataFrame(client.request_log)}
+        "history": signals.frame, "signals": signals, "requests": fetched_history["requests"].copy()}
     return refresh_profile_recommendations(workspace, fetched, top_k)
 
 

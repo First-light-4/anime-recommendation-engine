@@ -5,6 +5,26 @@
 
 ## Текущий статус
 
+ARE-008A: подготовлены реальные выборки 5k/10k за один согласованный потоковый проход
+при фиксированных validation/test. Train после фильтрации: 4621/9455 пользователей,
+359967/745354 взаимодействий, vocabulary 5279/6719 аниме. Notebook 07 показывает
+все три реальные выборки. План подготовки данных без сети:
+`.venv\Scripts\python.exe -m anime_recommender.training.scaling`.
+Архитектура, команды, стоимость и ограничения resume:
+[ARE-008A](docs/ARE-008A-training-data-scaling.md).
+Результаты загрузки и проверок: [контролируемый проход](docs/ARE-008A-controlled-scaling-run.md).
+
+ARE-008B: обучены отдельные ALS/Popularity 5k/10k; 1k переиспользована по fingerprint.
+На фиксированной validation ALS 10k: Full Recall@10=0.30515, Full NDCG@10=0.42528.
+Основное сравнение без franchise filtering; test не используется. Notebook 05
+переключает сохранённые модели через `model_version` без повторной загрузки профиля
+и обучения. Default остаётся `1k` до согласования, рекомендована `10k`.
+[Метрики, переключение и ограничения ARE-008B](docs/ARE-008B-model-comparison.md).
+ARE-008B.1: paired bootstrap по сохранённым результатам выполнен. Уверенное
+превосходство 10k над 5k не установлено; рекомендация 10k основана на trade-off
+каталога и point estimates, default остаётся 1k.
+[Bootstrap, popularity exposure и финальный review](docs/ARE-008B.1-final-model-selection.md).
+
 ARE-001: создана базовая структура Python-проекта, настроены сборка и smoke test.
 Для ARE-002.1 добавлен исследовательский notebook интеграции с YummyAnime API.
 ARE-003 содержит исследование обучающих данных; ARE-004 добавляет локальный pipeline

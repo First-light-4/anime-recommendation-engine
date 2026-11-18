@@ -53,19 +53,28 @@ class PreparedDataset:
     context_matrices: dict[str, csr_matrix] = field(default_factory=dict)
 
 
-def prepare_dataset(interactions, catalog_mapping, config) -> PreparedDataset:
+def prepare_dataset(interactions, catalog_mapping, config, *, fixed_assignments=None,
+                    fixed_holdouts=None) -> PreparedDataset:
     # No rating threshold or evaluation activity selection before the raw holdout.
-    assignments = assign_users(interactions["dataset_user_id"], config["seed"],
+    if (fixed_assignments is None) != (fixed_holdouts is None):
+        raise DataValidationError("Fixed assignments and holdouts must be supplied together")
+    assignments = (assign_users(interactions["dataset_user_id"], config["seed"],
         tuple(config[key] for key in ["train_fraction", "validation_fraction", "test_fraction"]))
+        if fixed_assignments is None else fixed_assignments[["dataset_user_id", "split"]].copy())
+    if assignments["dataset_user_id"].duplicated().any() or not set(assignments["split"]) <= {"train", "validation", "test"}:
+        raise DataValidationError("Invalid fixed user assignments")
+    if not set(interactions["dataset_user_id"]) <= set(assignments["dataset_user_id"]):
+        raise DataValidationError("Unassigned interaction user")
     allocated = assignments["split"].value_counts().to_dict()
     if any(allocated.get(name, 0) == 0 for name in ("train", "validation", "test")):
         raise DataValidationError("Not enough users to allocate three nonempty cohorts; thresholds unchanged")
     raw = {name: interactions.loc[interactions["dataset_user_id"].isin(
         assignments.loc[assignments["split"].eq(name), "dataset_user_id"])].copy()
         for name in ("train", "validation", "test")}
-    raw_evaluations = {name: split_observed_interactions(raw[name], config["seed"],
+    raw_evaluations = ({name: split_observed_interactions(raw[name], config["seed"],
         config["context_fraction"], config["min_context"], config["min_target"])
-        for name in ("validation", "test")}
+        for name in ("validation", "test")} if fixed_holdouts is None else
+        {name: tuple(frame.copy() for frame in fixed_holdouts[name]) for name in ("validation", "test")})
     threshold = config["positive_threshold"]
     train_positive = positive_feedback(raw["train"], threshold)
     train_candidates = eligible_positives(train_positive, assignments, "train", config["min_user_positives"])

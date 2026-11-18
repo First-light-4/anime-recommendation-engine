@@ -1,0 +1,7 @@
+{
+  "source_config": "configs/training_data.json",
+  "baseline_dir": "data/processed/ml",
+  "output_dir": "data/processed/scaling",
+  "cache_dir": "data/raw/scaling_sample_10000",
+  "sizes": [5000, 10000]
+}

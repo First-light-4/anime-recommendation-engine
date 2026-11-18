@@ -33,20 +33,29 @@ def load_training_inputs(directory) -> TrainingInputs:
     report = json.loads((directory / "dataset_report.json").read_text(encoding="utf-8"))
     if report.get("status") != "success" or report.get("dataset_version") != 2:
         raise DataValidationError("Require successful ARE-005.1 v2 artifacts")
+    if "baseline_reference" in report:
+        reference = Path(report["baseline_reference"])
+        if file_sha256(reference / "dataset_report.json") != report.get("baseline_report_sha256"):
+            raise DataValidationError("Baseline reference fingerprint mismatch")
+        return load_training_inputs(reference)
     names = ["train_interactions.parquet", "train_user_mapping.parquet", "item_mapping.parquet",
              "train_matrix.npz", "validation_context.parquet", "validation_target.parquet",
              "validation_observed_context.parquet", "validation_user_mapping.parquet"]
+    paths = {}
     for name in names:
-        if file_sha256(directory / name) != report.get("artifact_sha256", {}).get(name):
+        reference = report.get("shared_artifacts", {}).get(name)
+        paths[name] = Path(reference["path"]) if reference else directory / name
+        expected = reference["sha256"] if reference else report.get("artifact_sha256", {}).get(name)
+        if file_sha256(paths[name]) != expected:
             raise DataValidationError(f"Dataset checksum mismatch: {name}")
     train_hashes = {name: report["artifact_sha256"][name] for name in names[:4]}
     payload = {"train_hashes": train_hashes, "dataset_config": report["config"]}
     fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-    frames = {name: pd.read_parquet(directory / name) for name in names if name.endswith(".parquet")}
+    frames = {name: pd.read_parquet(paths[name]) for name in names if name.endswith(".parquet")}
     train = frames["train_interactions.parquet"]
     train_users = frames["train_user_mapping.parquet"]
     items = frames["item_mapping.parquet"]
-    matrix = load_npz(directory / "train_matrix.npz")
+    matrix = load_npz(paths["train_matrix.npz"])
     validation_users = frames["validation_user_mapping.parquet"]
     if set(train_users.dataset_user_id) & set(validation_users.dataset_user_id):
         raise DataValidationError("Train-validation user leakage")

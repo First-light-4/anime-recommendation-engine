@@ -1,0 +1,9 @@
+{
+  "default_version": "10k",
+  "versions": {
+    "1k": {"dataset_dir": "data/processed/scaling/baseline_1000", "model_dir": "artifacts/models/are006"},
+    "5k": {"dataset_dir": "data/processed/scaling/sample_5000", "model_dir": "artifacts/models/are008b/5k"},
+    "10k": {"dataset_dir": "data/processed/scaling/sample_10000", "model_dir": "artifacts/models/are008b/10k"}
+  },
+  "comparison_dir": "artifacts/evaluation/are008b"
+}

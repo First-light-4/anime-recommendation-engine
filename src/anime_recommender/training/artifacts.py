@@ -60,6 +60,9 @@ def load_models(directory, expected_mapping=None, expected_train_fingerprint=Non
     for name, sha in metadata["files_sha256"].items():
         if file_sha256(directory / name) != sha:
             raise DataValidationError(f"Model checksum mismatch: {name}")
+    saved_config = json.loads((directory / "training_config.json").read_text(encoding="utf-8"))
+    if saved_config != metadata.get("training_config"):
+        raise DataValidationError("Saved configuration and model metadata differ")
     mapping = validate_item_mapping(pd.read_parquet(directory / "item_mapping.parquet"))
     if mapping_fingerprint(mapping) != metadata.get("mapping_fingerprint"):
         raise DataValidationError("Model mapping fingerprint mismatch")
