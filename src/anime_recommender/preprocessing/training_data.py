@@ -1,27 +1,8 @@
 """Validation and conservative cleaning of training tables; no ALS transforms."""
 
+from anime_recommender.contracts import DataValidationError, require_columns, positive_ids
+
 import pandas as pd
-
-
-class DataValidationError(ValueError):
-    """A critical source or configuration contract was violated."""
-
-
-def require_columns(frame, columns, label):
-    missing = set(columns) - set(frame.columns)
-    if missing:
-        raise DataValidationError(f"{label}: missing columns: {sorted(missing)}")
-
-
-def positive_ids(values, label):
-    # IDs are decimal positive integers, not booleans, fractions, or infinity.
-    valid = values.astype("string").str.fullmatch(r"[1-9][0-9]*").fillna(False)
-    if not valid.all():
-        raise DataValidationError(f"{label}: {int((~valid).sum())} invalid/missing IDs")
-    try:
-        return values.astype("int64")
-    except (ValueError, OverflowError) as error:
-        raise DataValidationError(f"{label}: IDs exceed int64 range") from error
 
 
 def prepare_catalog(raw):

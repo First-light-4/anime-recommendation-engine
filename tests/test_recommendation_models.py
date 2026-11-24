@@ -117,6 +117,7 @@ def test_same_candidates_seen_low_rating_items_and_unknown_ids(toy):
 
 
 def test_safe_save_load_mapping_guard_and_same_recommendations(toy, tmp_path):
+    tmp_path = tmp_path / "bundle"  # Publisher now requires a new destination.
     bundle = fit_models(toy, config())
     before = bundle.recommenders()
     save_models(bundle, tmp_path)

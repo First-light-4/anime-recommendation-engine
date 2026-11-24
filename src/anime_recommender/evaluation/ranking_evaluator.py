@@ -15,10 +15,10 @@ from anime_recommender.evaluation.coverage import catalog_coverage, context_targ
 from anime_recommender.evaluation.ranking_metrics import METRICS, ranking_metrics
 from anime_recommender.evaluation.recommendation_checks import generate_validation_recommendations
 from anime_recommender.evaluation.reports import EvaluationReport, load_report, save_report
-from anime_recommender.ingestion.training_data import file_sha256
+from anime_recommender.artifact_files import file_sha256
 from anime_recommender.preprocessing.training_data import DataValidationError, positive_ids, require_columns
-from anime_recommender.training.artifacts import load_models, mapping_fingerprint
-from anime_recommender.training.inputs import load_training_inputs
+from anime_recommender.artifact_io import load_models, mapping_fingerprint
+from anime_recommender.validation_inputs import load_validation_view
 
 
 PROTOCOL_VERSION = "ARE-007A-v1"
@@ -208,8 +208,8 @@ def run_evaluation(root, config_path="configs/evaluation.json", persist=True):
         if path.is_absolute() or not (root / path).resolve().is_relative_to((root / parent).resolve()):
             raise ValueError("Evaluation paths must stay in their designated local directories")
     validate_ks(config["ks"])
-    inputs = load_training_inputs(root / config["dataset_dir"])
-    bundle = load_models(root / config["model_dir"], inputs.items, inputs.train_fingerprint)
+    bundle = load_models(root / config["model_dir"])
+    inputs = load_validation_view(root / config["dataset_dir"], bundle)
     report = evaluate_models(bundle, inputs, config["ks"], config["include_als_fallback"])
     catalog_path = root / config["catalog_path"]
     if file_sha256(catalog_path) != inputs.catalog_sha256:

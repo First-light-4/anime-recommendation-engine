@@ -11,9 +11,9 @@ import pandas as pd
 from anime_recommender.evaluation.ranking_evaluator import model_fingerprint
 from anime_recommender.evaluation.reports import json_safe, load_report
 from anime_recommender.inference.model_versions import load_version_registry
-from anime_recommender.ingestion.training_data import atomic_json, atomic_parquet, file_sha256
+from anime_recommender.artifact_files import atomic_json, atomic_parquet, file_sha256
 from anime_recommender.preprocessing.training_data import DataValidationError
-from anime_recommender.training.artifacts import load_models
+from anime_recommender.artifact_io import load_models
 
 VERSIONS = ("1k", "5k", "10k")
 PAIRS = (("5k", "1k"), ("10k", "1k"), ("10k", "5k"))

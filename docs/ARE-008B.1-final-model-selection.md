@@ -52,15 +52,15 @@ Fit time растёт 1.169→2.237 с, около 1.91 раза, абсолют
 Это прежние сохранённые timings, не новый benchmark; inference latency здесь не
 измерялась. Нельзя утверждать практическую равнозначность serving costs.
 
-**Рекомендую 10k как product default после согласования**: более широкий доступный
+**Финально согласована 10k как product default**: более широкий доступный
 каталог, меньше cold targets, больше абсолютных unique recommendations и лучшие
 точечные Full metrics при небольшом абсолютном fit time. Это решение по trade-off,
 а не статистически доказанное превосходство над 5k. Если важнее минимальный размер
 модели/затраты, 5k остаётся обоснованной альтернативой; данных для объявления
 10k обязательным победителем недостаточно. Улучшение diversity не заявляется.
 
-Конфигурация и Notebook 05 **остались на 1k**. Никакого автоматического изменения
-default не выполнено. Для более уверенного ранжирования 5k/10k потребуется
+После явного согласования конфигурация и Notebook 05 используют **10k** по умолчанию;
+1k/5k сохранены. Для более уверенного ранжирования 5k/10k потребуется
 отдельно согласованная более крупная независимая validation, не чтение test.
 
 ## Нормировка популярности
@@ -96,7 +96,8 @@ percentile относительно расширенного vocabulary раст
   неизменность исходной history, без refetch при switching.
 - Franchise filtering включён, предупреждение о partial metadata присутствует;
   online franchise discovery не выполняется, mapping не обновлён.
-- Default model_version="1k", top_k=15. Outputs и execution counts не сохранены.
+- Текущий default model_version="10k", top_k=15; при исходном review был 1k.
+  Outputs и execution counts не сохранены.
 - SHA **66 защищённых файлов** (models, исходные evaluation reports, franchise
   metadata, Notebook 01/05 и registry) остались неизменными.
 
@@ -128,11 +129,12 @@ exposure, нормировку, ties, source certificates и согласова�
 Существующий model-switch integration test теперь проверяет требуемый порядок
 1k→10k→5k→1k. Тесты работают offline, на synthetic fixtures.
 
-## Paired bootstrap: ????????? ??????????
+## Paired bootstrap: численные результаты
 
-? ? CI ??????? ? ?????????? ???????? ???????; relative ? ? win/loss/tie ? ????????. ??? ??????: n=100, undefined=0.
+Δ и CI указаны в абсолютных единицах метрики; relative Δ и win/loss/tie — проценты.
+Для всех строк n=100, undefined=0.
 
-| Comparison | Metric | ? absolute | ? relative | 95% CI | Improved / worsened / unchanged |
+| Comparison | Metric | Δ absolute | Δ relative | 95% CI | Improved / worsened / unchanged |
 | --- | --- | ---: | ---: | --- | --- |
 | 5k vs 1k | Full recall@10 | +0.017957 | +6.329% | [-0.020189; +0.054477] | 35% / 13% / 52% |
 | 5k vs 1k | Full ndcg@10 | +0.034998 | +9.016% | [+0.002441; +0.067541] | 50% / 26% / 24% |
@@ -141,9 +143,9 @@ exposure, нормировку, ties, source certificates и согласова�
 | 10k vs 5k | Full recall@10 | +0.003478 | +1.153% | [-0.020856; +0.028158] | 21% / 15% / 64% |
 | 10k vs 5k | Full ndcg@10 | +0.002120 | +0.501% | [-0.016071; +0.019663] | 40% / 32% / 28% |
 
-## Exposure ? coverage
+## Exposure и coverage
 
-| ?????????? | 1k | 5k | 10k |
+| Показатель | 1k | 5k | 10k |
 | --- | ---: | ---: | ---: |
 | Catalog Coverage@10, % | 11.143 | 4.982 | 4.212 |
 | Unique Recommended Items@10 | 233 | 263 | 283 |
@@ -152,9 +154,10 @@ exposure, нормировку, ties, source certificates и согласова�
 | Mean vocabulary popularity percentile | 96.673 | 98.177 | 98.303 |
 | Recommendations in top-10% items, % | 93.1 | 98.0 | 99.0 |
 
-## ????????????? ???????????? ?? popularity percentile
+## Распределение рекомендаций по popularity percentile
 
-100 ? ????? ?????????? item. ? ?????? count / share, ????? 1000 ??????? ?? ??????. Percentile bins ??????????????: ???????? (90,100].
+100 — самый популярный item. В ячейке count / share, всего 1000 позиций на модель.
+Percentile bins правозамкнутые: например (90,100].
 
 | Percentile bin | 1k | 5k | 10k |
 | --- | ---: | ---: | ---: |
@@ -169,10 +172,11 @@ exposure, нормировку, ties, source certificates и согласова�
 | 80-90 | 57 / 5.7% | 18 / 1.8% | 9 / 0.9% |
 | 90-100 | 931 / 93.1% | 980 / 98.0% | 990 / 99.0% |
 
-Notebook 05 runtime check: 2.45 ?, ?????????????????? 1k?10k?5k?1k. ??????????? outputs ???.
+Notebook 05 runtime check: 2.45 с, последовательность 1k→10k→5k→1k.
+Сохранённых outputs нет.
 
-## ?????????? ARE-008
+## Публикация ARE-008
 
-????????? default ? 10k. Source code, ????????????, ????????? Notebook ? ??????
-??????????? ??? ???????, ?????? ? cache.
-[????????? artifacts ? ??????????? ?????????????????](ARE-008-artifacts-and-reproduction.md).
+Финальный default — 10k. Source code, конфигурации, очищенные Notebook и отчёты
+публикуются без моделей, данных и cache.
+[Получение artifacts и ограничения воспроизводимости](ARE-008-artifacts-and-reproduction.md).

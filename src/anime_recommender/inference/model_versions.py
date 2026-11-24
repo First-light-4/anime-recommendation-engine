@@ -1,38 +1,17 @@
 """Explicit saved-model selection. No dataset rebuilding, training or discovery."""
 
-import json
 from pathlib import Path
 
-from anime_recommender.preprocessing.training_data import DataValidationError
-from anime_recommender.recommendation_exploration import load_profile_workspace
-
-
-def load_version_registry(root):
-    root = Path(root).resolve()
-    config = json.loads((root / "configs/model_versions.json").read_text(encoding="utf-8"))
-    if set(config["versions"]) != {"1k", "5k", "10k"} or config["default_version"] not in config["versions"]:
-        raise DataValidationError("Invalid model version registry")
-    for entry in config["versions"].values():
-        for key, parent in (("model_dir", "artifacts/models"), ("dataset_dir", "data")):
-            path = (root / entry[key]).resolve()
-            if not path.is_relative_to((root / parent).resolve()):
-                raise DataValidationError("Version path escapes local artifact directories")
-    return config
+from anime_recommender.registry.models import ModelRegistry, load_version_registry
+from anime_recommender.registry.workspace import load_profile_workspace
 
 
 def load_version_workspace(root, model_version=None):
-    registry = load_version_registry(root)
-    if model_version is None:
-        model_version = registry["default_version"]
-    if model_version not in registry["versions"]:
-        raise DataValidationError("model_version must be one of: 1k, 5k, 10k")
-    path = Path(root) / registry["versions"][model_version]["model_dir"]
-    if not (path / "metadata.json").is_file():
-        raise DataValidationError(f"Saved model {model_version} is missing; train it separately. No automatic fallback.")
-    workspace = load_profile_workspace(root, model_dir=path)
-    if model_version != "1k" and workspace.bundle.metadata.get("model_version") != model_version:
-        raise DataValidationError("Saved artifact version differs from selected model_version")
-    return workspace
+    registry = ModelRegistry(root)
+    version, entry = registry.resolve(model_version)
+    bundle = registry.load(version)
+    return load_profile_workspace(root, model_dir=Path(root) / entry["model_dir"],
+                                  model_loader=lambda _: bundle)
 
 
 def version_franchise_coverage(workspace, model_version):

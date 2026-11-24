@@ -7,7 +7,7 @@ from scipy.sparse import csr_matrix
 from threadpoolctl import threadpool_limits
 
 from anime_recommender.inference.recommendations import context_ids, validate_item_mapping
-from anime_recommender.preprocessing.training_data import DataValidationError
+from anime_recommender.contracts import DataValidationError
 
 
 @dataclass

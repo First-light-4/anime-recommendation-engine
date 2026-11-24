@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from anime_recommender.ingestion.training_data import atomic_json, atomic_parquet, file_sha256
+from anime_recommender.artifact_files import atomic_json, atomic_parquet, file_sha256
 
 
 TABLES = {"metrics", "cohorts", "user_metrics", "users", "history_distribution", "coverage",

@@ -1,5 +1,7 @@
 """One-pass complete-user sampling and checksum-verified local cache."""
 
+from anime_recommender.artifact_files import file_sha256, atomic_json, atomic_parquet
+
 import hashlib
 import heapq
 import io
@@ -10,26 +12,6 @@ import pandas as pd
 import requests
 
 from anime_recommender.preprocessing.training_data import DataValidationError, positive_ids, require_columns
-
-
-def file_sha256(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def atomic_json(path, value):
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(path)
-
-
-def atomic_parquet(frame, path):
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    frame.to_parquet(temporary, index=False, engine="pyarrow")
-    temporary.replace(path)
 
 
 def sample_complete_users(chunks, sample_users, seed):
@@ -90,6 +72,30 @@ class HashingReader(io.RawIOBase):
         return len(block)
 
 
+def load_cached_raw(config, root):
+    """Verify and decode an existing raw sample; never access the network."""
+    cache = root / config["cache_dir"]
+    parameters = {"source": config["source"], "sample_users": config["sample_users"], "seed": config["seed"],
+                  "sampling_version": "sha256-bottom-k-complete-users-v1"}
+    manifest_path = cache / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict) or "parameters" not in manifest or not isinstance(manifest.get("cache_sha256"), dict):
+            raise ValueError("Invalid manifest structure")
+        if set(manifest["cache_sha256"]) != {"sample_interactions.parquet", "anime_catalog.csv"}:
+            raise ValueError("Invalid cached file list")
+    except (ValueError, TypeError) as error:
+        raise DataValidationError("Invalid cache manifest; no automatic re-download") from error
+    if manifest["parameters"] != parameters:
+        raise DataValidationError("Cache parameters differ; choose a new cache_dir in config")
+    for name, expected_hash in manifest["cache_sha256"].items():
+        path = cache / name
+        if not path.is_file() or file_sha256(path) != expected_hash:
+            raise DataValidationError(f"Cached file missing or checksum mismatch: {name}")
+    return pd.read_parquet(cache / "sample_interactions.parquet"), pd.read_csv(
+        cache / "anime_catalog.csv", dtype="string"), manifest
+
+
 def acquire(config, root, allow_full_scan=False):
     cache = root / config["cache_dir"]
     source = config["source"]
@@ -97,22 +103,7 @@ def acquire(config, root, allow_full_scan=False):
                   "sampling_version": "sha256-bottom-k-complete-users-v1"}
     manifest_path = cache / "manifest.json"
     if manifest_path.exists():
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if not isinstance(manifest, dict) or "parameters" not in manifest or not isinstance(manifest.get("cache_sha256"), dict):
-                raise ValueError("Invalid manifest structure")
-            if set(manifest["cache_sha256"]) != {"sample_interactions.parquet", "anime_catalog.csv"}:
-                raise ValueError("Invalid cached file list")
-        except (ValueError, TypeError) as error:
-            raise DataValidationError("Invalid cache manifest; no automatic re-download") from error
-        if manifest["parameters"] != parameters:
-            raise DataValidationError("Cache parameters differ; choose a new cache_dir in config")
-        for name, expected_hash in manifest["cache_sha256"].items():
-            path = cache / name
-            if not path.is_file() or file_sha256(path) != expected_hash:
-                raise DataValidationError(f"Cached file missing or checksum mismatch: {name}")
-        return pd.read_parquet(cache / "sample_interactions.parquet"), pd.read_csv(
-            cache / "anime_catalog.csv", dtype="string"), manifest
+        return load_cached_raw(config, root)
     if not allow_full_scan:
         raise DataValidationError("No verified cache. A complete source scan is required; use --allow-full-scan only with approval")
     cache.mkdir(parents=True, exist_ok=True)

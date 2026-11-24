@@ -18,12 +18,18 @@ ARE-008B: обучены отдельные ALS/Popularity 5k/10k; 1k переи
 На фиксированной validation ALS 10k: Full Recall@10=0.30515, Full NDCG@10=0.42528.
 Основное сравнение без franchise filtering; test не используется. Notebook 05
 переключает сохранённые модели через `model_version` без повторной загрузки профиля
-и обучения. Default остаётся `1k` до согласования, рекомендована `10k`.
+и обучения. Текущая default-модель — **ALS `10k`**; `1k` и `5k` сохранены.
 [Метрики, переключение и ограничения ARE-008B](docs/ARE-008B-model-comparison.md).
 ARE-008B.1: paired bootstrap по сохранённым результатам выполнен. Уверенное
 превосходство 10k над 5k не установлено; рекомендация 10k основана на trade-off
-каталога и point estimates, default остаётся 1k.
+каталога и point estimates. После финального согласования default — **10k**.
 [Bootstrap, popularity exposure и финальный review](docs/ARE-008B.1-final-model-selection.md).
+
+Model binaries, datasets и cache не хранятся в Git. Для Notebook 05 нужен полный
+локальный bundle выбранной версии и проверенный каталог; автоматических download,
+fit или переключения на другую версию нет.
+[Пути и получение artifacts после клонирования](docs/ARE-008-artifacts-and-reproduction.md).
+[Compatibility baseline и canonical Warm protocol](docs/ARE-009B-compatibility-baseline.md).
 
 ARE-001: создана базовая структура Python-проекта, настроены сборка и smoke test.
 Для ARE-002.1 добавлен исследовательский notebook интеграции с YummyAnime API.
@@ -61,13 +67,16 @@ Compose. На текущем этапе подключены библиотек�
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.venv\Scripts\python.exe -m pip install -e ".[dev,data,ml,models,research]"
 .venv\Scripts\python.exe -m pytest
 ```
 
-Runtime-зависимостей нет. Для разработки используется `pytest>=8,<9`,
-для сборки — `setuptools>=68`. Версии пока не зафиксированы lock-файлом.
-Для установки без инструментов разработки используйте `pip install -e .`.
+Base package имеет пустой dependencies list; это не означает, что полноценные
+training/inference работают без дополнительных библиотек. Команда выше ставит
+существующие extras для полного pytest и Notebook. `pip install -e ".[dev]"`
+достаточен для package smoke, но не для всех ML/research tests. Для сборки нужен
+`setuptools>=68`; версии пока не зафиксированы lock-файлом. `pip install -e .`
+устанавливает только базовый пакет.
 
 Не добавляйте в Git секреты, датасеты и локальные артефакты моделей.
 `.gitignore` исключает `.env`, виртуальные окружения, данные и MLflow artifacts.
@@ -242,7 +251,8 @@ Scores и порядок допустимых рекомендаций сохр�
 
 Покрытие снимка — 32 MAL-сопоставленных элемента, 22 из 2091 train items; полную
 franchise-diversity не заявляем. Обновление источника выполняется отдельно и ограниченно,
-online inference читает только `configs/yummyanime_franchise_relations.json`.
+online inference предпочитает подготовленный локальный mapping, затем использует
+`configs/yummyanime_franchise_relations.json` как partial fallback.
 Исследование API и сценарии: [viewing_order](docs/ARE-007C-yummy-viewing-order.md).
 Отдельная validation-диагностика, не изменяющая результаты ARE-007A:
 
@@ -277,3 +287,23 @@ cache, объединение пересечений по ID с проверко
 Живая диагностика Rascal сейчас не завершена: оба ограниченных запуска получили
 HTTP 502 на MAL lookup. Связи не подставлены вручную. Реализация и synthetic regression
 проверены; подробности и ограничения — [ARE-007C.2](docs/ARE-007C.2-metadata-pipeline.md).
+
+## Независимые pipelines (ARE-009B/C/D)
+
+Текущий inference default — **ALS 10k**, доступны также 1k и 5k. Registry читает
+`configs/model_versions.json`; загрузка и переключение моделей не запускают обучение.
+Binary model artifacts не хранятся в Git; получение описано в
+[инструкции воспроизведения](docs/ARE-008-artifacts-and-reproduction.md).
+
+Новые Python API находятся в `anime_recommender.pipelines`: ingestion, preparation,
+training, evaluation, inference и franchise_metadata. Training использует TrainView
+без validation; evaluation — ValidationView и готовый bundle без train interactions/CSR.
+Каждый этап запускается явно. Новые model/report outputs не перезаписываются;
+подготовленные datasets переиспользуются после проверки config и checksums.
+Старые combined research APIs сохранены для совместимости.
+
+Контракты и примеры запуска:
+[compatibility baseline](docs/ARE-009B-compatibility-baseline.md),
+[Artifact I/O и Registry](docs/ARE-009C-contracts-and-registry.md),
+[pipeline boundaries и artifact lifecycle](docs/ARE-009D-independent-pipelines.md).
+Unified CLI пока не реализован.

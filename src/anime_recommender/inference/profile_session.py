@@ -6,8 +6,8 @@ import pandas as pd
 
 from anime_recommender.inference.model_versions import load_version_registry, load_version_workspace, version_franchise_coverage
 from anime_recommender.ingestion.yummyanime import YummyAnimeError
-from anime_recommender.preprocessing.training_data import DataValidationError
-from anime_recommender.recommendation_exploration import (
+from anime_recommender.contracts import DataValidationError
+from anime_recommender.profile_service import (
     _public_client, fetch_profile_history, profile_from_history, refresh_profile_recommendations, enrich_profile_titles,
 )
 

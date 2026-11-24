@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from anime_recommender.ingestion.training_data import file_sha256
+from anime_recommender.artifact_files import file_sha256
 
 
 def load_prepared_mapping(directory):

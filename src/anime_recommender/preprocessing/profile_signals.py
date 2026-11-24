@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from anime_recommender.evaluation.training_data import map_user_to_training
+from anime_recommender.preprocessing.catalog_mapping import map_user_to_training
 from anime_recommender.preprocessing.user_data import normalize_user_lists, raw_user_frame
 
 

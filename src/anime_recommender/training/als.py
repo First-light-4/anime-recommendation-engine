@@ -1,18 +1,13 @@
 """Fit CPU implicit ALS on users-by-items CSR; no evaluation inputs."""
 
+from anime_recommender.contracts import validate_factors
+
 import numpy as np
 from implicit.cpu.als import AlternatingLeastSquares
 from scipy.sparse import isspmatrix_csr
 from threadpoolctl import threadpool_limits
 
 from anime_recommender.preprocessing.training_data import DataValidationError
-
-
-def validate_factors(model, users, items):
-    if (model.user_factors.shape != (users, model.factors)
-            or model.item_factors.shape != (items, model.factors)
-            or not np.isfinite(model.user_factors).all() or not np.isfinite(model.item_factors).all()):
-        raise DataValidationError("ALS factor orientation, dimensions or finite values are invalid")
 
 
 def train_als(train_matrix, config, blas_threads=1):

@@ -71,11 +71,13 @@ aggregation и undefined semantics остаются ARE-007A. Основной �
 | Full NDCG@10, relative | +9.0162% | +9.5623% |
 
 Рекомендована **10k**: лучший point estimate обоих Full metrics. Преимущество над
-5k небольшое: Recall +0.003478, NDCG +0.002120. Это 100 validation users без
-confidence intervals; статистическая значимость не заявляется. Catalog Coverage
+5k небольшое: Recall +0.003478, NDCG +0.002120. Это 100 validation users;
+paired-bootstrap интервалы приведены в ARE-008B.1. Статистически уверенное
+превосходство 10k над 5k не подтверждено. Catalog Coverage
 как доля падает из-за роста знаменателя, хотя число показанных различных items растёт.
 Ниже приведён один диагностический пример, не дополнительный критерий выбора.
-Default в config и Notebook оставлен **1k** до явного согласования пользователя.
+После финального согласования default в registry и Notebook 05 — **10k**.
+1k и 5k остаются доступны для ручного сравнения.
 
 ## Артефакты и команды
 
@@ -155,11 +157,12 @@ vocabulary выбранной модели (отдельно выводится 
   Секреты, модели, датасеты и evaluation artifacts остаются вне Git.
 - Notebook 01 не изменён этой задачей. Commit/push ARE-008A/B не выполнялись.
 
-## ???? validation-????????????: 13026
+## Один validation-пользователь: 13026
 
-?????????? raw context ? targets, ??? franchise filtering. `is_hit` ???????? ????? ????????????. Scores ?????? ??????? ?? ??????????? ????? ?????.
+Одинаковые raw context и targets, без franchise filtering. `is_hit` вычислен после
+ранжирования. Scores разных моделей не калиброваны между собой.
 
-### 1k ? hits@10: 5
+### 1k — hits@10: 5
 
 | Rank | Title | ALS score | is_hit |
 | ---: | --- | ---: | --- |
@@ -174,7 +177,7 @@ vocabulary выбранной модели (отдельно выводится 
 | 9 | Hyouka | 0.473591 | True |
 | 10 | Charlotte | 0.468032 | False |
 
-### 5k ? hits@10: 7
+### 5k — hits@10: 7
 
 | Rank | Title | ALS score | is_hit |
 | ---: | --- | ---: | --- |
@@ -189,7 +192,7 @@ vocabulary выбранной модели (отдельно выводится 
 | 9 | Clannad | 0.536300 | True |
 | 10 | Anohana: The Flower We Saw That Day | 0.521241 | False |
 
-### 10k ? hits@10: 7
+### 10k — hits@10: 7
 
 | Rank | Title | ALS score | is_hit |
 | ---: | --- | ---: | --- |

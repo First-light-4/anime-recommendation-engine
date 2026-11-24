@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from anime_recommender.evaluation.dataset_validation import validate_context_matrix, validate_dataset
-from anime_recommender.ingestion.training_data import atomic_json, file_sha256
+from anime_recommender.preprocessing.dataset_validation import validate_context_matrix, validate_dataset
+from anime_recommender.artifact_files import atomic_json, file_sha256
 from anime_recommender.preprocessing.implicit_feedback import positive_feedback
 from anime_recommender.preprocessing.training_data import DataValidationError
-from anime_recommender.training.scaling import _same, scaling_summary
+from anime_recommender.preprocessing.scaling import _same, scaling_summary
 
 
 def audit_scaling_datasets(datasets, *, protected_sha256=None, root=None):

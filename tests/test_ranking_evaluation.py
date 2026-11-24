@@ -119,6 +119,36 @@ def test_full_warm_fallback_candidates_and_empty_groups(tiny):
     assert set(report.tables["history_distribution"].cohort) == set(COHORTS)
 
 
+def test_canonical_warm_includes_zero_warm_context_unlike_legacy(tiny):
+    from anime_recommender.evaluation.recommendation_checks import evaluate_validation
+    bundle, inputs = tiny
+    canonical = evaluate_models(bundle, inputs, ks=[10], include_als_fallback=False)
+    legacy = evaluate_validation(bundle.recommenders(), inputs.validation_context,
+        inputs.observed_context, inputs.validation_target, inputs.validation_users, inputs.items, 10)
+    modern = canonical.tables["metrics"].query('model_name == "als" and mode == "warm"').iloc[0]
+    old = legacy["summary"].query('model_name == "als"').iloc[0]
+    # Users 11/14 have warm targets but no warm context: canonical counts their
+    # unavailable ALS recommendations as zeros. Legacy excludes both from Warm.
+    assert modern.recall_eligible_users == 3
+    assert modern.recall == pytest.approx(1/3)
+    assert old.warm_recall_users == 1
+    assert old.warm_recall_at_k == 1
+    for model in ("als", "popularity"):
+        full = canonical.tables["metrics"].loc[lambda f: f.model_name.eq(model) & f["mode"].eq("full")].iloc[0]
+        historic = legacy["summary"].loc[lambda f: f.model_name.eq(model)].iloc[0]
+        assert full.recall == pytest.approx(historic.full_recall_at_k)
+        assert full.ndcg == pytest.approx(historic.ndcg_at_k)
+
+
+def test_canonical_warm_ignores_legacy_dataset_eligibility_flag(tiny):
+    bundle, inputs = tiny
+    before = evaluate_models(bundle, inputs, ks=[10])
+    inputs.validation_users["warm_recall_eligible"] = False
+    after = evaluate_models(bundle, inputs, ks=[10])
+    pd.testing.assert_frame_equal(before.tables["metrics"], after.tables["metrics"])
+    pd.testing.assert_frame_equal(before.tables["recommendations"], after.tables["recommendations"])
+
+
 def test_targets_do_not_change_generation_or_cohorts_and_results_repeat(tiny):
     bundle, inputs = tiny
     before_items, before_users = bundle.als.item_factors.copy(), bundle.als.user_factors.copy()

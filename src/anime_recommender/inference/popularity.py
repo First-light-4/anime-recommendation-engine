@@ -5,7 +5,7 @@ import pandas as pd
 from anime_recommender.inference.recommendations import (
     RecommendationResult, context_ids, rank_scores, validate_item_mapping,
 )
-from anime_recommender.preprocessing.training_data import DataValidationError
+from anime_recommender.contracts import DataValidationError
 
 
 class PopularityRecommender:

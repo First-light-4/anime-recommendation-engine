@@ -12,10 +12,10 @@ from anime_recommender.evaluation.recommendation_checks import diagnostic_metric
 from anime_recommender.evaluation.reports import json_safe
 from anime_recommender.inference.franchise_filter import recommend_with_franchise
 from anime_recommender.inference.recommendations import OUTPUT_COLUMNS
-from anime_recommender.ingestion.training_data import atomic_json, atomic_parquet, file_sha256
+from anime_recommender.artifact_files import atomic_json, atomic_parquet, file_sha256
 from anime_recommender.preprocessing.franchise_mapping import load_franchise_resources
-from anime_recommender.training.artifacts import load_models
-from anime_recommender.training.inputs import load_training_inputs
+from anime_recommender.artifact_io import load_models
+from anime_recommender.validation_inputs import load_validation_view
 
 
 def compare_franchise_filter(bundle, inputs, catalog, mapping, config, top_k=10):
@@ -98,8 +98,8 @@ def run_franchise_evaluation(root):
     base = json.loads(base_path.read_text(encoding="utf-8"))
     if base["split"] != "validation":
         raise ValueError("Only validation is allowed")
-    inputs = load_training_inputs(root / base["dataset_dir"])
-    bundle = load_models(root / base["model_dir"], inputs.items, inputs.train_fingerprint)
+    bundle = load_models(root / base["model_dir"])
+    inputs = load_validation_view(root / base["dataset_dir"], bundle)
     catalog_path = root / base["catalog_path"]
     if file_sha256(catalog_path) != inputs.catalog_sha256:
         raise ValueError("Franchise diagnostic catalog differs from certified source")

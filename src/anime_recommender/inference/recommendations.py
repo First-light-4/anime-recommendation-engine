@@ -1,22 +1,16 @@
 """Shared Top-N contract, deterministic ranking and known-item exclusion."""
 
+from anime_recommender.contracts import RecommendationResult, validate_item_mapping
+
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
-from anime_recommender.preprocessing.training_data import DataValidationError, positive_ids, require_columns
+from anime_recommender.contracts import DataValidationError, positive_ids, require_columns
 
 
 OUTPUT_COLUMNS = ["dataset_anime_id", "myanimelist_id", "score", "rank", "model_name"]
-
-
-@dataclass
-class RecommendationResult:
-    recommendations: pd.DataFrame
-    available: bool
-    diagnostics: dict
-    reason: str | None = None
 
 
 def context_ids(values) -> list[int]:
@@ -25,18 +19,6 @@ def context_ids(values) -> list[int]:
     if any(isinstance(v, (bool, np.bool_)) or not isinstance(v, (int, np.integer)) or v <= 0 for v in result):
         raise ValueError("Context/seen IDs must be positive integers in dataset ID space")
     return sorted(set(int(v) for v in result))
-
-
-def validate_item_mapping(mapping: pd.DataFrame) -> pd.DataFrame:
-    require_columns(mapping, ["dataset_anime_id", "myanimelist_id", "matrix_col"], "model item mapping")
-    frame = mapping[["dataset_anime_id", "myanimelist_id", "matrix_col"]].copy()
-    for col in ("dataset_anime_id", "myanimelist_id"):
-        frame[col] = positive_ids(frame[col], col)
-        if frame[col].duplicated().any():
-            raise DataValidationError(f"Model mapping is ambiguous: {col}")
-    if frame["matrix_col"].tolist() != list(range(len(frame))):
-        raise DataValidationError("Model item columns must be contiguous and ordered")
-    return frame.reset_index(drop=True)
 
 
 def rank_scores(scores, mapping, model_name, seen_ids=(), top_k=10, exclude_seen=True):
